@@ -1,3 +1,4 @@
+// server.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -7,26 +8,27 @@ const jwt = require('jsonwebtoken');
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// ------------------
+// MIDDLEWARE
+// ------------------
+app.use(cors()); // Bisa ganti origin: "http://localhost:3000" untuk frontend tertentu
 app.use(express.json());
 
 // ------------------
-// MongoDB connection
+// MONGO CONNECTION
 // ------------------
 const client = new MongoClient(process.env.MONGO_URI);
-let db, usersCollection, accountsCollection, user_app, user_traders
-
+let db, usersCollection, accountsCollection, user_app, user_traders;
 
 async function connectDB() {
   try {
     await client.connect();
     db = client.db(); // fxpro_demo
-    usersCollection = db.collection('users');       // collection untuk login, register, profile
-    accountsCollection = db.collection('accounts'); // collection untuk dashboard traders
-    user_app = db.collection('users_app'); 
-    user_traders = db.collection('user_traders'); // collection baru
-    console.log('✅ Connected to fxpro_demo');
+    usersCollection = db.collection('users');       // login/register/profile
+    accountsCollection = db.collection('accounts'); // dashboard traders
+    user_app = db.collection('users_app');          // admin users
+    user_traders = db.collection('user_traders');   // traders users
+    console.log('✅ Connected to MongoDB fxpro_demo');
   } catch (err) {
     console.error('MongoDB connection error:', err);
     process.exit(1);
@@ -35,7 +37,7 @@ async function connectDB() {
 connectDB();
 
 // ------------------
-// JWT Auth Middleware
+// JWT AUTH MIDDLEWARE
 // ------------------
 function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -147,17 +149,16 @@ app.get('/api/v1/profile', authMiddleware, async (req, res) => {
 });
 
 // DASHBOARD TRADERS
-//admin/dashboard/traders
 app.get('/api/v1/admin/dashboard/traders', authMiddleware, async (req, res) => {
   try {
     let { account_id, page, page_size } = req.query;
 
-    page = parseInt(page) || 1;           // default halaman 1
-    page_size = parseInt(page_size) || 50; // default 50 items per page
+    page = parseInt(page) || 1;
+    page_size = parseInt(page_size) || 50;
     const skip = (page - 1) * page_size;
 
     const filter = {};
-    if (account_id) filter.user_id = parseInt(account_id); // filter jika ada account_id
+    if (account_id) filter.user_id = parseInt(account_id);
 
     const total = await accountsCollection.countDocuments(filter);
     const accounts = await accountsCollection.find(filter)
@@ -191,33 +192,21 @@ app.get('/api/v1/admin/dashboard/traders', authMiddleware, async (req, res) => {
   }
 });
 
-
 // ------------------
-// USER APPS COLLECTION
-// ------------------
-// ------------------
-// GET ALL USERS (ADMIN) - FULL
+// ADMIN USERS COLLECTION
 // ------------------
 app.get('/api/v1/admin/usersadmin', authMiddleware, async (req, res) => {
   try {
-    // Ambil skip & limit dari query string
     let { skip, limit } = req.query;
-
     skip = parseInt(skip) || 0;
     limit = parseInt(limit) || 50;
 
-    // Hitung total dokumen
     const total = await user_app.countDocuments();
-
-    // Ambil data user sesuai pagination
     const users = await user_app.find({})
       .skip(skip)
       .limit(limit)
       .toArray();
 
-    console.log('Users raw:', users); // debug untuk cek data
-
-    // Mapping data sesuai format yang diinginkan
     const data = users.map(u => ({
       _id: u._id,
       name: u.name || "",
@@ -225,46 +214,25 @@ app.get('/api/v1/admin/usersadmin', authMiddleware, async (req, res) => {
       role: u.role || ""
     }));
 
-    // Response langsung array
     res.json(data);
-
-    // Jika mau menyertakan metadata pagination, bisa juga pakai ini:
-    /*
-    res.json({
-      users: data,
-      total,
-      skip,
-      limit,
-      total_pages: Math.ceil(total / limit)
-    });
-    */
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-
-
+// USER TRADERS COLLECTION
 app.get('/api/v1/admin/users', authMiddleware, async (req, res) => {
   try {
-    // Ambil skip & limit dari query string
     let { skip, limit } = req.query;
-
     skip = parseInt(skip) || 0;
     limit = parseInt(limit) || 50;
 
-    // Hitung total dokumen
     const total = await user_traders.countDocuments();
-
-    // Ambil data user sesuai pagination
     const users = await user_traders.find({})
       .skip(skip)
       .limit(limit)
       .toArray();
 
-    console.log('User Traders raw:', users); // debug untuk cek data
-
-    // Mapping data sesuai format yang diinginkan
     const data = users.map(u => ({
       _id: u._id,
       userId: u.userId,
@@ -276,25 +244,14 @@ app.get('/api/v1/admin/users', authMiddleware, async (req, res) => {
       verification: u.verification === true
     }));
 
-    // Response langsung array
     res.json(data);
-
-    // Jika mau menyertakan metadata pagination, bisa juga pakai ini:
-    /*
-    res.json({
-      user_traders: data,
-      total,
-      skip,
-      limit,
-      total_pages: Math.ceil(total / limit)
-    });
-    */
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 // ------------------
-// SERVER
+// START SERVER
 // ------------------
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
